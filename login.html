@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login - IoT Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  </head>
+  <body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md">
+      <h1 class="text-2xl font-bold text-center text-gray-800 mb-6">
+        Login to Dashboard
+      </h1>
+      <div>
+        <label class="block mb-2 text-sm font-medium text-gray-700"
+          >Username</label
+        >
+        <input
+          id="username"
+          type="text"
+          placeholder="Enter your username"
+          class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+          required
+        />
+      </div>
+      <div>
+        <label class="block mb-2 text-sm font-medium text-gray-700"
+          >Password</label
+        >
+        <input
+          id="password"
+          type="password"
+          placeholder="Enter your password"
+          class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+          required
+        />
+      </div>
+      <button
+        onclick="login()"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-lg font-semibold transition"
+      >
+        Login
+      </button>
+      <p class="text-center text-sm text-gray-500 mt-6">
+        &copy; 2025 IoT Dashboard
+      </p>
+    </div>
+    <script>
+      // Buat client MQTT
+      let isConnect = false;
+      // Buat koneksi
+      const client = mqtt.connect("wss://broker.emqx.io:8084/mqtt");
+
+      client.on("connect", function () {
+        console.log("Terkoneksi!");
+        isConnect = true;
+      });
+
+      client.on("message", async function (topic, message) {
+        const now = new Date();
+        const unixtime = Math.floor(now.getTime() / 1000) + 7 * 60 * 60;
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+        const userId = await hashSHA256(`${username}@${password}`);
+        // Pesan masuk
+        console.log("Pesan dari topic", topic, ":", message.toString());
+        let [hash, unixSend, messageValue] = message.toString().split("@");
+        let sign = await hashSHA256(`${userId}@${unixSend}@${messageValue}`);
+        if (hash == sign) {
+          console.log("yess");
+          if (Math.abs(unixSend - unixtime) < 20) {
+            console.log("yess again", Math.abs(unixSend - unixtime));
+            if (messageValue == "success") {
+              goToDashboard(userId);
+            }
+          }
+        }
+        console.log([message, userId, sign].join("@"));
+      });
+      function goToDashboard(userId) {
+        sessionStorage.setItem("userId", userId);
+        window.location.href = "./index.html";
+      }
+      function kirim() {
+        client.publish("testtopic/esp8266", "Hello dari MQTT.js");
+      }
+
+      async function hashSHA256(message) {
+        const encoder = new TextEncoder(); // Mengubah string menjadi bytes
+        const data = encoder.encode(message); // Encode string ke bytes
+
+        // Melakukan hashing menggunakan SHA-256
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+
+        // Mengubah buffer menjadi string hexadecimal
+        const hashArray = Array.from(new Uint8Array(hashBuffer)); // Ubah buffer ke array byte
+        const hashHex = hashArray
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join(""); // Konversi byte ke hex
+
+        return hashHex;
+      }
+
+      async function login() {
+        const now = new Date();
+        const unixtime = Math.floor(now.getTime() / 1000) + 7 * 60 * 60;
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+        const userId = await hashSHA256(`${username}@${password}`);
+        const topic = await hashSHA256(`${userId}@topic`);
+        if (isConnect) {
+          console.log(`${username}@${password}`);
+          console.log(userId);
+          console.log(topic);
+          client.subscribe(topic);
+          const massage = "login";
+          const sign = await hashSHA256(`${userId}@${unixtime}@${massage}`);
+          const connectionMassage = `${sign}@${unixtime}@${massage}`;
+          client.publish(topic, connectionMassage);
+        } else {
+          console.log("gagal");
+        }
+      }
+      async function sendMassage() {}
+    </script>
+  </body>
+</html>

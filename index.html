@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IoT Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+      #sidebar {
+        transition: all 0.3s ease-in-out;
+      }
+      .translate-x-0 {
+        transform: translateX(0);
+      }
+      .-translate-x-full {
+        transform: translateX(-100%);
+      }
+      #sidebarBackdrop,
+      #modalBackdrop {
+        background: rgba(0, 0, 0, 0.3);
+      }
+    </style>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  </head>
+  <body class="bg-gray-100 min-h-screen relative">
+    <!-- Sidebar Backdrop -->
+    <div
+      id="sidebarBackdrop"
+      class="fixed inset-0 hidden z-30"
+      onclick="closeSidebar()"
+    ></div>
+
+    <!-- Modal Backdrop (uses same logic as modal background) -->
+    <!-- Mobile Nav Toggle -->
+    <div
+      class="md:hidden flex justify-between items-center p-4 bg-white shadow fixed w-full z-50 top-0 left-0"
+    >
+      <h2 class="text-xl font-bold">IoT Dashboard</h2>
+      <button onclick="toggleSidebar()" class="text-gray-700 z-50">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="w-6 h-6"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4 6h16M4 12h16M4 18h16"
+          />
+        </svg>
+      </button>
+    </div>
+
+    <div class="flex flex-col md:flex-row pt-16 md:pt-0">
+      <!-- Sidebar -->
+      <aside
+        id="sidebar"
+        class="fixed inset-y-0 left-0 w-64 bg-white shadow-lg transform -translate-x-full md:translate-x-0 md:relative md:block z-40 p-6 space-y-6"
+      >
+        <div class="flex justify-between items-center">
+          <h2 class="text-2xl font-bold text-gray-800">Dashboard</h2>
+          <button onclick="toggleSidebar()" class="md:hidden text-gray-700">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="w-6 h-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <nav class="flex flex-col space-y-4">
+          <a href="#" class="text-gray-700 hover:text-blue-600">Dashboard</a>
+          <a href="#" class="text-gray-700 hover:text-blue-600"
+            >Feed Schedule</a
+          >
+          <a href="#" class="text-gray-700 hover:text-blue-600">Device Data</a>
+          <a href="#" class="text-gray-700 hover:text-blue-600">Settings</a>
+        </nav>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="flex-1 p-4 md:p-8">
+        <div
+          class="flex flex-col md:flex-row md:justify-between md:items-center mb-6 gap-4"
+        >
+          <h1 class="text-2xl md:text-3xl font-semibold">Feed Schedule</h1>
+          <button
+            onclick="sendMessage('feeding')"
+            class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 w-full md:w-auto"
+          >
+            Feed 1 portion
+          </button>
+          <button
+            onclick="openModal()"
+            class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 w-full md:w-auto"
+          >
+            Add Schedule
+          </button>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <div
+            id="scheduleCard"
+            class="bg-white p-4 md:p-6 rounded-lg shadow relative transition-all"
+          >
+            <h2 class="text-xl font-semibold mb-4">Scheduled Feedings</h2>
+            <button
+              id="editIcon"
+              onclick="toggleEditMode()"
+              class="absolute top-4 right-4 text-gray-500 hover:text-blue-600"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-5 h-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15.232 5.232l3.536 3.536M9 11l3 3L20.485 5.515a2.121 2.121 0 00-3-3L9 11z"
+                />
+              </svg>
+            </button>
+            <div id="scheduleList" class="space-y-4"></div>
+            <div id="editSaveBar" class="hidden border-t mt-6 pt-4 text-right">
+              <button
+                onclick="toggleEditMode()"
+                class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 w-full md:w-auto"
+              >
+                Done Editing
+              </button>
+            </div>
+          </div>
+          <div class="bg-white p-4 md:p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold mb-4">
+              Sensor Data (Temperature & Humidity)
+            </h2>
+            <div class="h-48 bg-gray-200 flex items-center justify-center">
+              Chart Area
+            </div>
+          </div>
+          <div class="bg-white p-4 md:p-6 rounded-lg shadow lg:col-span-2">
+            <h2 class="text-xl font-semibold mb-4">Device Status</h2>
+            <ul class="space-y-2">
+              <li class="flex justify-between">
+                <span>Device 1</span><span class="text-green-500">Online</span>
+              </li>
+              <li class="flex justify-between">
+                <span>Device 2</span><span class="text-red-500">Offline</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Modal -->
+    <div
+      id="scheduleModal"
+      class="fixed inset-0 bg-black bg-opacity-30 hidden items-center justify-center p-4"
+      onclick="closeModal()"
+    >
+      <div
+        class="bg-white p-6 rounded-lg w-full max-w-md shadow-lg"
+        onclick="event.stopPropagation()"
+      >
+        <h2 class="text-xl font-semibold mb-4">Set Feed Schedule</h2>
+        <form onsubmit="addOrUpdateSchedule(event)">
+          <div class="mb-4">
+            <label class="block text-gray-700 mb-2">Time</label>
+            <input
+              id="scheduleTime"
+              type="time"
+              value="12:00"
+              class="w-full px-4 py-2 border rounded-lg"
+              required
+            />
+          </div>
+          <div class="mb-4">
+            <label class="block text-gray-700 mb-2">Portion</label>
+            <input
+              id="schedulePortion"
+              type="number"
+              value="1"
+              min="1"
+              class="w-full px-4 py-2 border rounded-lg"
+              required
+            />
+          </div>
+          <div class="flex justify-end space-x-2">
+            <button
+              type="button"
+              onclick="closeModal()"
+              class="bg-gray-300 px-4 py-2 rounded-lg hover:bg-gray-400"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              Save
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      if (!sessionStorage.getItem("userId")) {
+        window.location.href = "./login.html";
+      }
+      let editTarget = null;
+      let isEditMode = false;
+      let isConnect = false;
+      const userId = sessionStorage.getItem("userId");
+      let topic = "";
+      const client = mqtt.connect("wss://broker.emqx.io:8084/mqtt");
+
+      client.on("connect", async function () {
+        console.log("Terkoneksi!");
+        topic = await hashSHA256(`${userId}@topic`);
+        client.subscribe(topic);
+        sendMessage("get schedule");
+        isConnect = true;
+      });
+
+      client.on("message", async function (topic, message) {
+        const now = new Date();
+        const unixtime = Math.floor(now.getTime() / 1000) + 7 * 60 * 60;
+        // Pesan masuk
+        console.log("Pesan dari topic", topic, ":", message.toString());
+        let [hash, unixSend, messageValue] = message.toString().split("@");
+        let sign = await hashSHA256(`${userId}@${unixSend}@${messageValue}`);
+        if (hash == sign) {
+          console.log("yess");
+          if (Math.abs(unixSend - unixtime) < 20) {
+            console.log("yess again", Math.abs(unixSend - unixtime));
+            if (messageValue.split(";")[0] == "schedule") {
+              let tempSchedule = messageValue.split(";")[1].split("");
+              for (let i = 0; i < 10; i++) {
+                const arrayTime = tempSchedule.slice(i * 6, i * 6 + 6);
+                console.log(arrayTime);
+                if (Number(arrayTime.join("")) != 0) {
+                  addSchedule(
+                    `${arrayTime[0]}${arrayTime[1]}:${arrayTime[2]}${arrayTime[3]}`,
+                    Number(`${arrayTime[4]}${arrayTime[5]}`)
+                  );
+                }
+              }
+            }
+          }
+        }
+      });
+
+      function toggleSidebar() {
+        const sidebar = document.getElementById("sidebar");
+        const backdrop = document.getElementById("sidebarBackdrop");
+        sidebar.classList.toggle("-translate-x-full");
+        backdrop.classList.toggle("hidden");
+      }
+
+      function closeSidebar() {
+        const sidebar = document.getElementById("sidebar");
+        const backdrop = document.getElementById("sidebarBackdrop");
+        sidebar.classList.add("-translate-x-full");
+        backdrop.classList.add("hidden");
+      }
+
+      function openModal(editItem = null) {
+        editTarget = editItem;
+        if (editItem) {
+          const [timeText, portionText] = editItem
+            .querySelector("span")
+            .textContent.split(" - ");
+          document.getElementById("scheduleTime").value = timeText.trim();
+          document.getElementById("schedulePortion").value =
+            parseInt(portionText);
+        } else {
+          document.getElementById("scheduleTime").value = "12:00";
+          document.getElementById("schedulePortion").value = 1;
+        }
+        document.getElementById("scheduleModal").classList.remove("hidden");
+        document.getElementById("scheduleModal").classList.add("flex");
+      }
+
+      function closeModal() {
+        document.getElementById("scheduleModal").classList.add("hidden");
+        document.getElementById("scheduleModal").classList.remove("flex");
+      }
+
+      async function saveSchedulesToSession() {
+        const list = document.getElementById("scheduleList");
+        const items = Array.from(list.children);
+        const schedules = items.map((item) => {
+          const [time, portionInfo] = item
+            .querySelector("span")
+            .textContent.split(" - ");
+          const portion = portionInfo.replace(/\D/g, ""); // Ambil angka saja
+          return { time: time.trim(), portion: parseInt(portion) };
+        });
+        sessionStorage.setItem("schedules", JSON.stringify(schedules));
+        console.log("Updated schedules:", schedules);
+        let massage = "schedule;";
+        schedules.forEach((element) => {
+          const jam = element.time.split(":")[0].padStart(2, "0");
+          const menit = element.time.split(":")[1].padStart(2, "0");
+          const porsi = element.portion.toString().padStart(2, "0");
+          massage = massage + jam + menit + porsi;
+        });
+        sendMessage(massage);
+      }
+
+      function addOrUpdateSchedule(event) {
+        event.preventDefault();
+        const time = document.getElementById("scheduleTime").value;
+        const portion = document.getElementById("schedulePortion").value;
+        const scheduleList = document.getElementById("scheduleList");
+
+        if (editTarget) {
+          editTarget.querySelector(
+            "span"
+          ).textContent = `${time} - ${portion} portion(s)`;
+          editTarget.dataset.time = time;
+          editTarget = null;
+        } else {
+          const item = document.createElement("div");
+          item.className = "flex justify-between bg-gray-100 p-4 rounded-md";
+          item.dataset.time = time;
+          item.innerHTML = `
+      <span class="text-gray-700">${time} - ${portion} portion(s)</span>
+      <div class="space-x-2 hidden">
+        <button class='text-blue-500 hover:underline' onclick='openModal(this.parentElement.parentElement)'>Edit</button>
+        <button class='text-red-500 hover:underline' onclick='this.parentElement.parentElement.remove(); sortSchedules(); saveSchedulesToSession();'>Remove</button>
+      </div>
+    `;
+          scheduleList.appendChild(item);
+        }
+        sortSchedules();
+        saveSchedulesToSession(); // << Save after sorting
+        closeModal();
+      }
+
+      function addSchedule(time, portion) {
+        const scheduleList = document.getElementById("scheduleList");
+        const item = document.createElement("div");
+        item.className = "flex justify-between bg-gray-100 p-4 rounded-md";
+        item.dataset.time = time;
+        item.innerHTML = `
+      <span class="text-gray-700">${time} - ${portion} portion(s)</span>
+      <div class="space-x-2 hidden">
+        <button class='text-blue-500 hover:underline' onclick='openModal(this.parentElement.parentElement)'>Edit</button>
+        <button class='text-red-500 hover:underline' onclick='this.parentElement.parentElement.remove(); sortSchedules(); saveSchedulesToSession();'>Remove</button>
+      </div>
+    `;
+        scheduleList.appendChild(item);
+        sortSchedules();
+      }
+
+      function sortSchedules() {
+        const list = document.getElementById("scheduleList");
+        const items = Array.from(list.children);
+        items.sort((a, b) => a.dataset.time.localeCompare(b.dataset.time));
+        items.forEach((item) => list.appendChild(item));
+      }
+
+      function toggleEditMode() {
+        isEditMode = !isEditMode;
+        const actions = document.querySelectorAll("#scheduleList .space-x-2");
+        const scheduleCard = document.getElementById("scheduleCard");
+        const editSaveBar = document.getElementById("editSaveBar");
+        const editIcon = document.getElementById("editIcon");
+
+        actions.forEach((div) => {
+          if (isEditMode) {
+            div.classList.remove("hidden");
+          } else {
+            div.classList.add("hidden");
+          }
+        });
+
+        if (isEditMode) {
+          scheduleCard.classList.add("border", "border-blue-300", "bg-blue-50");
+          editSaveBar.classList.remove("hidden");
+          if (editIcon) editIcon.classList.add("hidden");
+        } else {
+          scheduleCard.classList.remove(
+            "border",
+            "border-blue-300",
+            "bg-blue-50"
+          );
+          editSaveBar.classList.add("hidden");
+          if (editIcon) editIcon.classList.remove("hidden");
+        }
+      }
+
+      async function hashSHA256(message) {
+        const encoder = new TextEncoder(); // Mengubah string menjadi bytes
+        const data = encoder.encode(message); // Encode string ke bytes
+
+        // Melakukan hashing menggunakan SHA-256
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+
+        // Mengubah buffer menjadi string hexadecimal
+        const hashArray = Array.from(new Uint8Array(hashBuffer)); // Ubah buffer ke array byte
+        const hashHex = hashArray
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join(""); // Konversi byte ke hex
+
+        return hashHex;
+      }
+
+      async function sendMessage(message) {
+        const now = new Date();
+        const unixNow = Math.floor(now.getTime() / 1000) + 7 * 60 * 60;
+        const sign = await hashSHA256(`${userId}@${unixNow}@${message}`);
+        const outMessage = `${sign}@${unixNow}@${message}`;
+        console.log(topic, outMessage);
+        client.publish(topic, outMessage);
+      }
+    </script>
+  </body>
+</html>
